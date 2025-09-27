@@ -27,7 +27,7 @@ p_list=("0.5" "0.4" "0.3" "0.2" "0.1")
 for temp in "${t_list[@]}"; do
     for P in "${p_list[@]}"; do
         echo "Running with t=${temp} and p=${P}"
-        output_dir="${workdir}/eval_results/mv_recon/${model_name}_${ckpt_name}_P${P}_temp${temp}_unnormalizedScore_kf25_50"
+        output_dir="${workdir}/eval_results/mv_recon/${model_name}_${ckpt_name}_P${P}_temp${temp}"
         echo "$output_dir"
         accelerate launch --num_processes 1 --main_process_port 29602 ./eval/mv_recon/launch.py \
         --weights "$model_weights" \

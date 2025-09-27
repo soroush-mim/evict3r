@@ -197,12 +197,6 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
                     else:
                         del attn_maps_global_layers
                         del past_key_values
-                # kv_cache_mem = 0
-                # for kv_cache in past_key_values:
-                #     for cashe in kv_cache:
-                #         kv_cache_mem = kv_cache_mem + (cashe.numel() * cashe.element_size())
-                # print(f"GPU RAM usage of kv cashe in iteration {i}: {kv_cache_mem} bytes")
-                # print(f"k cashe shape for each layer in iteration {i}: {past_key_values[0][0].shape} bytes")
             else:
                 aggregated_tokens, patch_start_idx = aggregator_output
             
@@ -263,13 +257,11 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
         for layer_idx, (attn_map, k) in enumerate(zip(attn_maps_global_layers, tk_rm_num_per_layer)):
             all_token_num = attn_map.shape[0]
             #rm percentage is per layer
-            # k = int(all_token_num * (rm_percentage / 100))
             rm_num = k - (token_per_frame_num*(S+1) - all_token_num)
             if rm_num>0:
                 num_evicted = num_evicted + rm_num
                 if rand_rm:
                     #select random indices
-                    # flat_indices = torch.randperm(y - x, device=device)[:k] + x
                     flat_indices = torch.randperm(all_token_num - 5, device=device)[:rm_num] + 5
 
                 else:
@@ -279,7 +271,6 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
                     scores = attn_map / (exp + 1e-6)
                     # Using topk directly without intermediate tensors
                     _, flat_indices = torch.topk(scores, rm_num, largest=False)
-                    # Clean up scores tensor immediately
                     del scores
             else:
                 flat_indices = None
@@ -344,7 +335,7 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
                     keep_mask[rem] = False
                     keep_idx = torch.nonzero(keep_mask, as_tuple=False).squeeze(1)  # sorted ascending
 
-            # --- slice tensors once (fast, contiguous result) ---
+            # --- slice tensors once ---
             K_new = K.index_select(2, keep_idx)
             del K
             V_new = V.index_select(2, keep_idx)
@@ -359,49 +350,7 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
             
             # Simplified token merging to reduce memory usage
             if merge_tokens and (rem is not None) and (rem.numel() > 0) and (keep_idx.numel() > 0):
-                # Use a simpler merging strategy that's more memory efficient
-                kept_cols = keep_idx.size(0)
-                R = rem.size(0)
-                
-                # Only merge if we have a reasonable number of tokens to avoid memory explosion
-                if R <= 64 and kept_cols <= 512:  # Conservative limits
-                    # Simplified similarity calculation using only first head
-                    K_first_head = K[:, 0, :, :]  # [B, T, D] - use only first head
-                    K_kept = K_first_head.index_select(1, keep_idx)  # [B, K_keep, D]
-                    K_rm = K_first_head.index_select(1, rem)         # [B, R, D]
-                    
-                    # Normalize for cosine similarity
-                    K_kept_n = F.normalize(K_kept, p=2, dim=-1)
-                    K_rm_n = F.normalize(K_rm, p=2, dim=-1)
-                    
-                    # Similarity [B, R, K] - batch matrix multiplication is more efficient
-                    sim = torch.bmm(K_rm_n, K_kept_n.transpose(-2, -1))  # [B, R, K]
-                    vals, idx_best = sim.max(dim=2)  # [B, R]
-                    
-                    # Only merge those above threshold
-                    mask = vals >= merge_threshold
-                    
-                    if mask.any():
-                        # Simple averaging without complex weight calculations
-                        for b in range(B):
-                            b_mask = mask[b]  # [R]
-                            if b_mask.any():
-                                b_rem_indices = rem[b_mask]
-                                b_keep_indices = idx_best[b, b_mask]
-                                
-                                # Simple averaging for each merge
-                                for r_idx, k_idx in zip(b_rem_indices, b_keep_indices):
-                                    # Average K, V, pos values
-                                    K_new[b, :, k_idx] = (K_new[b, :, k_idx] + K[b, :, r_idx]) * 0.5
-                                    V_new[b, :, k_idx] = (V_new[b, :, k_idx] + V[b, :, r_idx]) * 0.5
-                                    pos_new[b, k_idx] = (pos_new[b, k_idx] + pos[b, r_idx]) * 0.5
-                                    
-                                    # Update attention maps and exposure counts
-                                    attn_map_new[k_idx] = attn_map_new[k_idx] + attn_map[r_idx]
-                                    exp_new[k_idx] = exp_new[k_idx] + exp_vec[r_idx]
-                    
-                    # Cleanup intermediate tensors
-                    del K_first_head, K_kept, K_rm, K_kept_n, K_rm_n, sim, vals, idx_best, mask
+                pass
 
             kv_cache[layer_idx] = (K_new, V_new, pos_new)
             del K_new, V_new, pos_new
@@ -429,7 +378,6 @@ class StreamVGGT(nn.Module, PyTorchModelHubMixin):
         variances = []
         for A in attn_maps:
             # Compute per-token cumulative attention, e.g., sum over queries (rows)
-            # token_sums = A.sum(dim=0)  # or sum(dim=1); shape: [seq_len]
             # Compute variance across token_sums
             var = A.var(unbiased=False)  # scalar
             variances.append(var)
