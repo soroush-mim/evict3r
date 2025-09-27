@@ -387,7 +387,7 @@ def extract_frames_from_video(video_path, output_dir, fps_interval=1):
     vs.release()
     return sorted(image_paths)
 
-def run_model_on_images(image_paths, model):
+def run_model_on_images(image_paths, model, eviction=True, P=0.5, temp=0.5):
     """Run the model on images following the same logic as demo_gradio.py"""
     print(f"Processing {len(image_paths)} images")
     
@@ -421,7 +421,7 @@ def run_model_on_images(image_paths, model):
     with torch.no_grad():
         with torch.cuda.amp.autocast(dtype=dtype):
             
-            output = model.inference(frames, eviction=True, P=0.3, temp=1.5)
+            output = model.inference(frames, eviction=eviction, P=P, temp=temp)
     
     # Process outputs following the same logic as demo
     all_pts3d = []
@@ -538,70 +538,7 @@ def _tokenj_to_box(token_j: int, H: int, W: int, patch: int):
     x1, y1 = min(W, (c0 + 1) * patch), min(H, (r0 + 1) * patch)
     return x0, y0, x1, y1
 
-def _draw_layer_overlays_from_owners(model, predictions, out_dir, layers="all", write_video=False):
-    if not hasattr(model, "_evicted_tokens_per_layer") or model._evicted_tokens_per_layer is None:
-        print("[evictions] no owner-based evictions on model.")
-        return
 
-    # Images used by the model (S, 3, H, W) -> uint8 RGB
-    imgs = predictions["images"]
-    S, _, H, W = imgs.shape
-    imgs_u8 = []
-    for f in range(S):
-        im = imgs[f]
-        mn, mx = float(im.min()), float(im.max())
-        if mx - mn < 1e-9:
-            vis = np.zeros((H, W, 3), dtype=np.uint8)
-        else:
-            vis = ((np.clip((im - mn) / (mx - mn), 0.0, 1.0) * 255.0)).astype(np.uint8).transpose(1, 2, 0)
-        imgs_u8.append(vis)
-    imgs_u8 = np.stack(imgs_u8, axis=0)
-
-    # layer selection
-    try:
-        L = len(model.aggregator.global_blocks)
-    except Exception:
-        L = 24
-    if layers.strip().lower() == "all":
-        sel_layers = list(range(L))
-    else:
-        sel_layers = sorted(set(int(x) for x in layers.split(",")))
-
-    patch = getattr(model.aggregator, "patch_size", 14)  # expected 14
-    base = Path(out_dir) / "evictions"
-    base.mkdir(parents=True, exist_ok=True)
-
-    for l in sel_layers:
-        layer_dir = base / f"L{l:02d}"
-        layer_dir.mkdir(parents=True, exist_ok=True)
-        layer_map = model._evicted_tokens_per_layer[l] if l < len(model._evicted_tokens_per_layer) else {}
-
-        vw = None
-        if write_video:
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            vw = cv2.VideoWriter(str(layer_dir / f"L{l:02d}.mp4"), fourcc, 10.0, (W, H))
-
-        for f in range(S):
-            rgb = imgs_u8[f].copy()
-            token_js = layer_map.get(f, [])
-            # draw
-            count = 0
-            for tj in token_js:
-                if tj < 5:  # skip specials (safety)
-                    continue
-                x0, y0, x1, y1 = _tokenj_to_box(tj, H, W, patch)
-                cv2.rectangle(rgb, (x0, y0), (x1, y1), (0, 0, 255), 1)
-                count += 1
-            cv2.putText(rgb, f"evicted by L{l:02d}: {count}", (8, 18),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,255), 1, cv2.LINE_AA)
-
-            cv2.imwrite(str(layer_dir / f"frame_{f:04d}.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-            if vw is not None:
-                vw.write(cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
-        if vw is not None:
-            vw.release()
-
-    print(f"[evictions] wrote overlays to: {base}")
 
 def main():
     parser = argparse.ArgumentParser(description="Run StreamVGGT inference on a video and create 3D visualizations.")
@@ -618,12 +555,9 @@ def main():
     parser.add_argument("--mask_sky", action="store_true", help="Apply sky segmentation mask.")
     parser.add_argument("--prediction_mode", type=str, default="Pointmap Regression", help="Prediction mode for visualization.")
     parser.add_argument("--no_3d_viz", action="store_true", help="Skip 3D visualization creation.")
-    parser.add_argument("--draw_evictions_exact", action="store_true",
-                        help="Draw per-layer overlays from model._evicted_tokens_per_layer (owners-based).")
-    parser.add_argument("--layers", type=str, default="all",
-                        help="Comma-separated layer ids (e.g., 0,1,2) or 'all'.")
-    parser.add_argument("--evict_video", action="store_true",
-                        help="Also export per-layer MP4 videos.")
+    parser.add_argument("--eviction", action="store_true", help="Use eviction.")
+    parser.add_argument("--P", type=float, default=0.5, help="Eviction probability.")
+    parser.add_argument("--temp", type=float, default=0.5, help="Temperature for softmax.")
 
     args = parser.parse_args()
     
@@ -652,7 +586,7 @@ def main():
         
             # Perform the forward pass
             print("Running StreamVGGT inference...")
-            predictions = run_model_on_images(image_paths, model)
+            predictions = run_model_on_images(image_paths, model, args.eviction, args.P, args.temp)
 
             # The attention maps are now stored in the extractor instance
             attention_maps = extractor.get_maps()
@@ -666,10 +600,7 @@ def main():
     else:
         # Run model inference
         print("Running StreamVGGT inference...")
-        predictions = run_model_on_images(image_paths, model)
-        if args.draw_evictions_exact:
-            _draw_layer_overlays_from_owners(model, predictions, args.out_dir,
-                                            layers=args.layers, write_video=args.evict_video)
+        predictions = run_model_on_images(image_paths, model, args.eviction, args.P, args.temp)
 
 
 

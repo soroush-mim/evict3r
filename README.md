@@ -115,6 +115,83 @@ bash eval/mv_recon/run.sh
 Results will be saved in `eval_results/mv_recon/${model_name}_${ckpt_name}/logs_all.txt`.
 
 
+## Video Inference
+
+The `inference_video.py` script allows you to run Evict3R on video files to generate 3D reconstructions and depth maps. The script automatically extracts frames from the input video, processes them through the StreamVGGT model with token eviction, and creates 3D visualizations.
+
+### Basic Usage
+
+```bash
+python inference_video.py --video path/to/your/video.mp4
+```
+
+### Advanced Usage with Custom Parameters
+
+```bash
+# Run inference with custom frame sampling and visualization settings
+python inference_video.py \
+  --video path/to/your/video.mp4 \
+  --out_dir custom_output_directory \
+  --fps_interval 1.0 \
+  --conf_thres 2.5 \
+  --show_cam \
+  --mask_black_bg \
+  --eviction \
+  --P 0.5 \
+  --temp 0.5
+```
+
+### Extract Attention Maps (Optional)
+
+To analyze the attention patterns during inference:
+
+```bash
+# Extract attention maps from specific layers (e.g., layers 0, 5, 11)
+python inference_video.py \
+  --video path/to/your/video.mp4 \
+  --attn_layers "0,5,11" \
+  --out_dir output_with_attention
+```
+
+### Parameters
+
+- `--video`: Path to input video file (required)
+- `--ckpt`: Path to StreamVGGT checkpoint (default: automatic download from HuggingFace)
+- `--out_dir`: Output directory for results (default: "output_streamvggt")
+- `--fps_interval`: Extract 1 frame every N seconds (default: 2.5)
+- `--conf_thres`: Confidence threshold for 3D visualization (default: 3.0)
+- `--show_cam`: Show camera poses in 3D visualization
+- `--mask_black_bg`: Mask black background pixels
+- `--mask_white_bg`: Mask white background pixels  
+- `--mask_sky`: Apply sky segmentation mask
+- `--attn_layers`: Comma-separated layer indices for attention visualization
+- `--no_3d_viz`: Skip 3D GLB file generation
+- `--device`: Computing device (default: "cuda")
+- `--eviction`: use eviction
+- `--P`: eviction budget
+- `--temp`: tempratue for per layer budget allocation
+
+
+### Example Workflows
+
+**Quick 3D reconstruction from video: (eviction with budget=0.5 and temp=0.5)**
+```bash
+python inference_video.py --video demo.mp4 --fps_interval 0.5 --eviction --P 0.5 --temp 0.5
+```
+
+**High-quality reconstruction with camera visualization:**
+```bash
+python inference_video.py --video demo.mp4 --conf_thres 4.0 --show_cam --mask_black_bg
+```
+
+**Research analysis with attention maps:**
+```bash
+python inference_video.py --video demo.mp4 --attn_layers "0,3,6,9,11" --out_dir research_output
+```
+
+
+## Acknowledgements
+
 ## Acknowledgements
 Our code is based on the following brilliant repositories:
 
