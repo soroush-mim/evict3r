@@ -11,7 +11,7 @@
 
 
 
-**StreamVGGT**, a causal transformer architecture for **real-time streaming 4D visual geometry perception** compatiable with LLM-targeted attention mechanism (e.g., [FlashAttention](https://github.com/Dao-AILab/flash-attention)), delivers both fast inference and high-quality 4D reconstruction.
+Our method, **evict3r**, manages the growing key–value (KV) cache of StreamVGGT by introducing a layer-wise token eviction framework.
 
 ## News
 
