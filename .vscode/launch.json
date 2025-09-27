@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            //python inference_video.py --video pyramid.mp4 --attn_layers 1,2,3,4,5,7,9,11,13,15,17,19,21,23 --fps_interval 2.5 --show_cam
+            "args": ["--video", "pyramid.mp4", "--attn_layers", "0", "--fps_interval", "2.1", "--show_cam"]
+        }
+        ,
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--weights" , "/data/soroush/StreamVGGT/ckpt/checkpoints.pth" ,"--output_dir" ,"../eval_results/mv_recon/StreamVGGT_checkpoints",
+            "--model_name","StreamVGGT", "--eviction" ,"--P" ,"0.8","--temp" ,"0.8"]
+        }
+    ]
+}
